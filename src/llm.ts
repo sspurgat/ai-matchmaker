@@ -1,13 +1,21 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod/v4";
-import type { ChatMessage, PreferenceProfile } from "./types.ts";
+import type { ChatMessage, PreferenceProfile, RelationshipMemory } from "./types.ts";
+
+export interface SummarizeInput {
+  characterName: string;
+  previous?: RelationshipMemory;
+  messages: ChatMessage[]; // the older messages being folded into memory
+}
 
 // Everything the engine needs from a model. Tests swap in a scripted fake.
 export interface Brain {
   // Returns one or more texts to send, in order.
   reply(system: string, history: ChatMessage[], nudge?: string): Promise<string[]>;
   extractProfile(transcript: ChatMessage[]): Promise<PreferenceProfile>;
+  // Folds older messages into the companion's long-term memory notes.
+  summarize(input: SummarizeInput): Promise<RelationshipMemory>;
 }
 
 const MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-5-5";
@@ -19,6 +27,14 @@ const ProfileSchema = z.object({
   vibe: z.array(z.string()),
   dealbreakers: z.array(z.string()),
   readyToIntroduce: z.boolean(),
+});
+
+const MemorySchema = z.object({
+  userFacts: z.array(z.string()),
+  sharedMemories: z.array(z.string()),
+  milestones: z.array(z.string()),
+  preferences: z.array(z.string()),
+  recentContext: z.string(),
 });
 
 // Our history is "user" vs "them"; the API wants alternating user/assistant
@@ -97,6 +113,40 @@ ${lines}
       ],
     });
     if (!response.parsed_output) throw new Error("Profile extraction failed");
+    return response.parsed_output;
+  }
+
+  async summarize({ characterName, previous, messages }: SummarizeInput) {
+    const lines = messages.map((m) => `${m.from === "user" ? "USER" : characterName.toUpperCase()}: ${m.text}`).join("\n");
+    const response = await this.client.messages.parse({
+      model: MODEL,
+      max_tokens: 4000,
+      output_config: { effort: "low", format: zodOutputFormat(MemorySchema) },
+      messages: [
+        {
+          role: "user",
+          content: `You maintain ${characterName}'s long-term memory of a texting relationship with a user. ${characterName} is a fictional character; older messages are about to be dropped from her context, so anything worth remembering must be in these notes.
+
+Merge the existing notes with the new messages and return the updated notes:
+- userFacts: stable facts about the user (name, job, pets, family, where they live, plans).
+- sharedMemories: specific things they talked about or "did" together, inside jokes.
+- milestones: relationship firsts and turning points (first flirt, first photo, a fight, making up).
+- preferences: what the user likes or dislikes in how ${characterName} talks to them.
+- recentContext: one sentence on where the conversation left off.
+
+Short phrases, no more than 20 items per list. Keep older items unless the new messages contradict them; drop trivia. Leave out passwords, payment details, and other sensitive identifiers.
+
+<existing_notes>
+${JSON.stringify(previous ?? {})}
+</existing_notes>
+
+<new_messages>
+${lines}
+</new_messages>`,
+        },
+      ],
+    });
+    if (!response.parsed_output) throw new Error("Memory summarization failed");
     return response.parsed_output;
   }
 }
