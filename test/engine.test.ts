@@ -276,3 +276,15 @@ test("STOP opts the user out from any line", async () => {
   await engine.handleInbound("matchmaker", PHONE, "STOP");
   assert.equal(store.getUser(PHONE)!.stage, "opted_out");
 });
+
+test("a failed model call still gets a reply instead of silence", async () => {
+  const s = setup({ showErrors: true });
+  s.brain.reply = async () => {
+    throw new Error("boom");
+  };
+  await s.engine.handleInbound("matchmaker", PHONE, "hi");
+  await s.engine.handleInbound("matchmaker", PHONE, "I am");
+  const last = s.transport.sent.at(-1)!;
+  assert.match(last.text, /Reply failed: boom/);
+  assert.equal(s.store.getUser(PHONE)!.stage, "discovery", "the age confirmation still sticks");
+});

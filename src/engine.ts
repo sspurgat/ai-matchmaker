@@ -1,7 +1,7 @@
 import { MemoryAnalytics, type Analytics } from "./analytics.ts";
 import { COSTS, PRODUCTS, account, applyPurchase, getProduct, grant, spend, type PaymentEvent, type PaymentProvider } from "./billing.ts";
 import { CHARACTERS, getCharacter } from "./characters.ts";
-import type { Brain } from "./llm.ts";
+import { describeError, type Brain } from "./llm.ts";
 import { NoImageGenerator, PHOTO_REQUEST, checkImageRequest, nextLibraryPhoto, type ImageGenerator } from "./media.ts";
 import {
   AGE_RETRY_TEXT,
@@ -45,6 +45,7 @@ export interface EngineConfig {
   keepRecent: number; // messages kept verbatim after a summary
   maxInboundPerMinute: number; // per user, across all lines
   startingCredits: number; // granted once, when age is confirmed
+  showErrors: boolean; // simulator: tell the tester why a reply failed instead of a generic apology
 }
 
 export const DEFAULT_CONFIG: EngineConfig = {
@@ -58,6 +59,7 @@ export const DEFAULT_CONFIG: EngineConfig = {
   keepRecent: 16,
   maxInboundPerMinute: 20,
   startingCredits: 10, // PLACEHOLDER: the spec leaves this open
+  showErrors: false,
 };
 
 export interface EngineDeps {
@@ -175,8 +177,17 @@ export class Engine {
       }
 
       this.analytics.track("user_message", phone, { identity });
-      if (identity === MATCHMAKER) await this.onMatchmakerText(user, text, crisis);
-      else await this.onCompanionText(user, identity, text, crisis);
+      try {
+        if (identity === MATCHMAKER) await this.onMatchmakerText(user, text, crisis);
+        else await this.onCompanionText(user, identity, text, crisis);
+      } catch (err) {
+        // Never go silent: a failed model call used to leave the user with no reply at all.
+        const why = describeError(err);
+        console.error(`Couldn't reply to ${phone} as ${identity}: ${why}`);
+        this.analytics.track("reply_failed", phone, { identity });
+        const notice = this.config.showErrors ? `Reply failed: ${why}` : "Sorry, something went wrong on our end. Try again in a minute.";
+        await this.send(user, identity, [appNotice(notice)], { record: false }).catch(() => {});
+      }
       this.store.saveUser(user);
     });
   }

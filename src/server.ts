@@ -29,7 +29,7 @@ const transport = MODE === "linq" ? new LinqTransport(process.env.LINQ_API_KEY!,
 
 const config =
   MODE === "sim"
-    ? { ...DEFAULT_CONFIG, introDelayMs: 4000, typingMsPerChar: 15 }
+    ? { ...DEFAULT_CONFIG, introDelayMs: 4000, typingMsPerChar: 15, showErrors: true }
     : DEFAULT_CONFIG;
 
 const analytics = new JsonlAnalytics(process.env.ANALYTICS_FILE ?? path.join(root, "data", `${MODE}-events.jsonl`));
@@ -214,6 +214,8 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`AI Matchmaker (${MODE} mode) on http://localhost:${PORT}`);
+  const problem = await brain.check();
+  console.log(problem ? `\n⚠️  Claude API problem: ${problem}\n` : "Claude API key works.");
 });

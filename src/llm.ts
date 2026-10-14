@@ -20,6 +20,23 @@ export interface Brain {
 
 const MODEL = process.env.CLAUDE_MODEL ?? "claude-opus-5-5";
 
+// Turns an API failure into something a person can act on.
+export function describeError(err: unknown): string {
+  if (err instanceof Anthropic.AuthenticationError) {
+    return "The Claude API key was rejected. Check ANTHROPIC_API_KEY in .env (no spaces or quotes), then restart.";
+  }
+  if (err instanceof Anthropic.PermissionDeniedError) {
+    return `This API key can't use ${MODEL}. ${err.message}`;
+  }
+  if (err instanceof Anthropic.RateLimitError) return "Claude API rate limit hit. Wait a minute and try again.";
+  if (err instanceof Anthropic.BadRequestError && /credit balance/i.test(err.message)) {
+    return "Your Anthropic account is out of credits. Add some at console.anthropic.com under Billing, then try again.";
+  }
+  if (err instanceof Anthropic.APIConnectionError) return "Couldn't reach the Claude API. Check your internet connection.";
+  if (err instanceof Anthropic.APIError) return `Claude API error ${err.status}: ${err.message}`;
+  return err instanceof Error ? err.message : String(err);
+}
+
 const ProfileSchema = z.object({
   summary: z.string(),
   personality: z.array(z.string()),
@@ -67,6 +84,17 @@ export function splitTexts(raw: string): string[] {
 
 export class ClaudeBrain implements Brain {
   private client = new Anthropic();
+
+  // Cheap startup check that the key works and can see the model.
+  // Returns undefined when fine, or a readable problem.
+  async check(): Promise<string | undefined> {
+    try {
+      await this.client.models.retrieve(MODEL);
+      return undefined;
+    } catch (err) {
+      return describeError(err);
+    }
+  }
 
   async reply(system: string, history: ChatMessage[], nudge?: string) {
     const response = await this.client.beta.messages.create({
