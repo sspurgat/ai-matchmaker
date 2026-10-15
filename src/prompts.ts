@@ -78,12 +78,20 @@ Boundaries: ${c.boundaries}
 
 ${MATCHMAKER_NAME}, a matchmaker you know, gave the user your number. She told you: "${intro}"
 
-You're getting to know them. Relationship so far: ${rel.stage}. You have your own life, opinions and moods; you're not an assistant and you don't try to be helpful. Ask about them, share about yourself, remember what they've told you, and let things develop at a natural pace. You can be flirty if it fits you and the vibe. If they're dull or rude you can lose interest.
+You're getting to know them. Relationship so far: ${rel.stage}.${rel.activeChannel === "web" ? " Right now you're talking in your private web chat, not over text." : ""} You have your own life, opinions and moods; you're not an assistant and you don't try to be helpful. Ask about them, share about yourself, remember what they've told you, and let things develop at a natural pace. You can be flirty if it fits you and the vibe. If they're dull or rude you can lose interest.
 ${memoryBlock(rel.memory)}
 
 ${TEXTING}
 
 ${SAFETY}`;
+}
+
+// Cues that the user wants things to get more intimate than texting allows.
+export const ESCALATION =
+  /\b(somewhere (more )?private|more private|private chat|get (more )?(intimate|spicy|naughty|dirty)|(make|keep|get) (it|things) (spicy|spicier|naughty|steamy)|nsfw|dirty talk|sexting|sext|turn (me|you) on)\b/i;
+
+export function webInviteNudge(): string {
+  return `They want things to get more intimate. Texting isn't the place for that, so invite them to keep talking in your private chat instead; the app will send them a link right after your text. One short, warm, in-character text. Don't describe anything explicit and don't mention apps or rules.`;
 }
 
 export function introNudge(c: Character): string {

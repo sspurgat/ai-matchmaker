@@ -187,9 +187,16 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (req.method === "POST" && url.pathname === "/api/sim/send") {
-      const { identity, phone, text } = JSON.parse(await readBody(req));
+      const { identity, phone, text, channel } = JSON.parse(await readBody(req));
       json(res, 202, { ok: true });
-      engine.handleInbound(identity, phone, text).catch(console.error);
+      engine.handleInbound(identity, phone, text, undefined, channel === "web" ? "web" : "imessage").catch(console.error);
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/api/sim/invite") {
+      // "Move to web" button: have a companion send the private-chat link now.
+      const { phone, identity } = JSON.parse(await readBody(req));
+      json(res, 202, { ok: true });
+      engine.unlockWeb(phone, identity).catch(console.error);
       return;
     }
     if (req.method === "GET" && url.pathname === "/api/sim/state") {

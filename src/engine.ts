@@ -19,6 +19,8 @@ import {
   introNudge,
   matchmakerSystem,
   photoNudge,
+  ESCALATION,
+  webInviteNudge,
 } from "./prompts.ts";
 import { rankCharacters } from "./ranking.ts";
 import {
@@ -32,7 +34,7 @@ import {
 } from "./safety.ts";
 import { newUser, type Store } from "./store.ts";
 import type { Transport } from "./transport.ts";
-import { MATCHMAKER, type ChatMessage, type IdentityId, type Relationship, type User } from "./types.ts";
+import { MATCHMAKER, type Channel, type ChatMessage, type IdentityId, type Relationship, type User } from "./types.ts";
 
 export interface EngineConfig {
   introsPerRound: number; // how many people the matchmaker introduces at once
@@ -117,7 +119,9 @@ export class Engine {
     this.background.add(tracked);
   }
 
-  handleInbound(identity: IdentityId, phone: string, text: string, chatId?: string) {
+  // channel: where the user wrote. Only companions have a web chat; the
+  // matchmaker is always over iMessage.
+  handleInbound(identity: IdentityId, phone: string, text: string, chatId?: string, channel: Channel = "imessage") {
     return this.withUser(phone, async () => {
       let user = this.store.getUser(phone);
       if (!user) {
@@ -179,7 +183,7 @@ export class Engine {
       this.analytics.track("user_message", phone, { identity });
       try {
         if (identity === MATCHMAKER) await this.onMatchmakerText(user, text, crisis);
-        else await this.onCompanionText(user, identity, text, crisis);
+        else await this.onCompanionText(user, identity, text, crisis, channel);
       } catch (err) {
         // Never go silent: a failed model call used to leave the user with no reply at all.
         const why = describeError(err);
@@ -246,14 +250,16 @@ export class Engine {
     return CHARACTERS.filter((c) => !user.relationships[c.id]).length;
   }
 
-  private async onCompanionText(user: User, characterId: string, text: string, crisis: boolean) {
+  private async onCompanionText(user: User, characterId: string, text: string, crisis: boolean, channel: Channel = "imessage") {
     const rel = user.relationships[characterId];
     if (!rel || !user.ageConfirmedAt) {
       // Someone texted a companion line without an introduction. Ignore for now.
       console.warn(`${user.phone} texted ${characterId} without an intro`);
       return;
     }
-    rel.history.push({ from: "user", text, at: now() });
+    if (channel === "web" && !rel.webUnlockedAt) return; // no invite, no web chat
+    rel.activeChannel = channel;
+    rel.history.push({ from: "user", text, at: now(), channel });
     rel.userMessageCount++;
     rel.lastUserMessageAt = now();
     const before = rel.stage;
@@ -262,6 +268,10 @@ export class Engine {
     if (rel.stage !== before) this.analytics.track("relationship_stage", user.phone, { characterId, from: before, to: rel.stage });
 
     const c = getCharacter(characterId);
+    if (channel === "imessage" && ESCALATION.test(text)) {
+      await this.inviteToWeb(user, rel);
+      return;
+    }
     const handled = await this.maybeHandlePhoto(user, rel, text);
     if (!handled) {
       let texts = await this.companionReply(user, rel);
@@ -272,6 +282,37 @@ export class Engine {
     if (rel.history.length - (rel.summarizedThrough ?? 0) > this.config.summarizeAfter) {
       this.spawn(this.summarize(user.phone, c.id));
     }
+  }
+
+  // The iMessage -> web handoff: the companion suggests somewhere more
+  // private, then a link card opens the web chat.
+  private async inviteToWeb(user: User, rel: Relationship) {
+    const c = getCharacter(rel.characterId);
+    const first = !rel.webUnlockedAt;
+    rel.webUnlockedAt ??= now();
+    await this.send(user, c.id, await this.companionReply(user, rel, webInviteNudge()), { channel: "imessage" });
+    await this.send(user, c.id, [`Private chat with ${c.name}`], {
+      channel: "imessage",
+      record: false,
+      link: { url: this.webChatUrl(user, c.id), title: `Continue with ${c.name} privately` },
+    });
+    if (first) this.analytics.track("web_invited", user.phone, { characterId: c.id });
+  }
+
+  // Simulator/admin: open the web chat for a companion without waiting for a cue.
+  unlockWeb(phone: string, characterId: string) {
+    return this.withUser(phone, async () => {
+      const user = this.store.getUser(phone);
+      const rel = user?.relationships[characterId];
+      if (!user || !rel) throw new Error("no such relationship");
+      await this.inviteToWeb(user, rel);
+      this.store.saveUser(user);
+    });
+  }
+
+  // PLACEHOLDER: a real web chat needs a signed, expiring link and a login.
+  private webChatUrl(_user: User, characterId: string) {
+    return `/private/${characterId}`;
   }
 
   private companionReply(user: User, rel: Relationship, nudge?: string) {
@@ -474,10 +515,12 @@ export class Engine {
     user: User,
     identity: IdentityId,
     texts: string[],
-    opts: { record?: boolean; mediaUrl?: string } = {},
+    opts: { record?: boolean; mediaUrl?: string; channel?: Channel; link?: { url: string; title: string } } = {},
   ) {
-    const history: ChatMessage[] | undefined =
-      identity === MATCHMAKER ? user.matchmakerHistory : user.relationships[identity]?.history;
+    const rel = identity === MATCHMAKER ? undefined : user.relationships[identity];
+    const history: ChatMessage[] | undefined = identity === MATCHMAKER ? user.matchmakerHistory : rel?.history;
+    // Replies go where the user last wrote; proactive texts default to iMessage.
+    const channel: Channel = opts.channel ?? rel?.activeChannel ?? "imessage";
     for (const [i, text] of texts.entries()) {
       const chatId = user.chatIds[identity];
       if (chatId && this.transport.typing) await this.transport.typing(chatId);
@@ -488,9 +531,11 @@ export class Engine {
         text,
         chatId,
         mediaUrl: i === 0 ? opts.mediaUrl : undefined,
+        channel,
+        link: opts.link,
       });
-      if (id) user.chatIds[identity] = id;
-      if (opts.record !== false) history?.push({ from: "them", text, at: now() });
+      if (id && channel === "imessage") user.chatIds[identity] = id;
+      if (opts.record !== false) history?.push({ from: "them", text, at: now(), channel });
     }
   }
 }

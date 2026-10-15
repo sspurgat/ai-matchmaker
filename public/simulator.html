@@ -5,8 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Matchmaker Simulator</title>
 <style>
-  :root { --bg:#f2f2f7; --panel:#fff; --line:#d1d1d6; --me:#0a84ff; --them:#e5e5ea; --text:#111; --muted:#6e6e73; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#000; --panel:#1c1c1e; --line:#38383a; --them:#2c2c2e; --text:#f2f2f7; --muted:#8e8e93; } }
+  :root { --bg:#f2f2f7; --panel:#fff; --line:#d1d1d6; --me:#0a84ff; --them:#e5e5ea; --text:#111; --muted:#6e6e73;
+          --web-bg:#1d1424; --web-panel:#271b31; --web-line:#3d2b4b; --web-me:#c2457a; --web-them:#382844; --web-text:#f6eef9; --web-muted:#b49fc2; --web-accent:#f08bb4; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#000; --panel:#1c1c1e; --line:#38383a; --them:#2c2c2e; --text:#f2f2f7; --muted:#8e8e93; } }
+  :root[data-theme="dark"] { --bg:#000; --panel:#1c1c1e; --line:#38383a; --them:#2c2c2e; --text:#f2f2f7; --muted:#8e8e93; }
   * { box-sizing: border-box; }
   body { margin:0; font:15px -apple-system, system-ui, sans-serif; background:var(--bg); color:var(--text); height:100vh; display:grid; grid-template-columns: 240px 1fr 300px; }
   aside, main, section { background:var(--panel); border-right:1px solid var(--line); display:flex; flex-direction:column; min-height:0; }
@@ -15,19 +17,62 @@
   .contact.active { background:var(--them); }
   .contact small { display:block; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .unread { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--me); margin-left:6px; }
+  .tag { display:inline-flex; align-items:center; gap:3px; font-size:11px; font-weight:500; padding:1px 7px; border-radius:9px; margin-left:6px; vertical-align:1px; }
+  .tag.web { background:#f3dbe7; color:#8e2453; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tag.web { background:#4a2238; color:#f5b2cf; } }
   #thread { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:6px; }
-  .msg { max-width:70%; padding:8px 12px; border-radius:18px; white-space:pre-wrap; line-height:1.35; }
-  .msg.me { align-self:flex-end; background:var(--me); color:#fff; }
-  .msg.them { align-self:flex-start; background:var(--them); }
+  .row { display:flex; flex-direction:column; max-width:72%; }
+  .row.me { align-self:flex-end; align-items:flex-end; }
+  .row.them { align-self:flex-start; align-items:flex-start; }
+  .msg { padding:8px 12px; border-radius:18px; white-space:pre-wrap; line-height:1.35; overflow-wrap:anywhere; }
+  .row.me .msg { background:var(--me); color:#fff; }
+  .row.them .msg { background:var(--them); }
+  .row.system { align-self:center; font-size:12px; color:var(--muted); text-align:center; }
+  .typing { padding:4px 16px; font-size:12px; color:var(--muted); }
+  [hidden] { display:none !important; }
   .msg img { max-width:220px; border-radius:12px; display:block; margin-top:6px; }
+  .badge { display:inline-flex; align-items:center; gap:4px; font-size:11px; color:var(--muted); margin:2px 6px 0; }
+  .badge svg { width:12px; height:12px; }
+  .linkcard { border:1px solid var(--line); border-radius:16px; overflow:hidden; cursor:pointer; background:var(--panel); min-width:230px; text-align:left; padding:0; color:var(--text); }
+  .linkcard .art { height:84px; background:linear-gradient(135deg,#3a1f4a,#c2457a); display:flex; align-items:center; justify-content:center; color:#fff; }
+  .linkcard .art svg { width:30px; height:30px; }
+  .linkcard .meta { padding:8px 12px; }
+  .linkcard .meta b { display:block; font-size:14px; }
+  .linkcard .meta span { font-size:12px; color:var(--muted); }
   form { display:flex; gap:8px; padding:10px; border-top:1px solid var(--line); }
   input, button { font:inherit; border-radius:18px; border:1px solid var(--line); padding:8px 12px; background:var(--panel); color:var(--text); }
-  input { flex:1; }
+  input { flex:1; min-width:0; }
   button { cursor:pointer; }
+  button:disabled { opacity:.45; cursor:default; }
   pre { margin:0; padding:12px; font-size:12px; overflow:auto; flex:1; white-space:pre-wrap; }
   .tools { display:flex; flex-wrap:wrap; gap:6px; padding:10px; border-bottom:1px solid var(--line); }
+  .legend { padding:10px 12px; border-bottom:1px solid var(--line); font-size:12px; color:var(--muted); display:grid; gap:6px; }
+  .legend div { display:flex; align-items:center; gap:6px; }
+  .legend svg { width:14px; height:14px; flex:none; }
   .muted { color:var(--muted); font-weight:400; font-size:13px; }
+
+  /* ---- Private web chat: a different product surface, so it looks different ---- */
+  main.web { background:var(--web-bg); color:var(--web-text); border-color:var(--web-line); }
+  .chrome { display:none; align-items:center; gap:8px; padding:8px 10px; background:var(--web-panel); border-bottom:1px solid var(--web-line); }
+  main.web .chrome { display:flex; }
+  .chrome button { background:transparent; border:1px solid var(--web-line); color:var(--web-text); padding:4px 10px; font-size:13px; }
+  .url { flex:1; display:flex; align-items:center; gap:6px; background:var(--web-bg); border-radius:10px; padding:5px 10px; font-size:13px; color:var(--web-muted); min-width:0; white-space:nowrap; overflow:hidden; }
+  .url svg { width:12px; height:12px; flex:none; color:#7fd49b; }
+  main.web header { border-color:var(--web-line); display:flex; align-items:center; gap:10px; }
+  .avatar { display:none; width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,#7a3b8f,#f08bb4); color:#fff; font-weight:700; align-items:center; justify-content:center; }
+  main.web .avatar { display:inline-flex; }
+  .sub { display:none; font-size:12px; font-weight:400; color:var(--web-muted); }
+  main.web .sub { display:block; }
+  main.web .row.me .msg { background:var(--web-me); border-radius:14px 14px 4px 14px; }
+  main.web .row.them .msg { background:var(--web-them); color:var(--web-text); border-radius:14px 14px 14px 4px; }
+  main.web .badge { color:var(--web-muted); }
+  main.web form { border-color:var(--web-line); background:var(--web-panel); }
+  main.web input { background:var(--web-bg); border-color:var(--web-line); color:var(--web-text); border-radius:12px; }
+  main.web form button { background:var(--web-me); border-color:var(--web-me); color:#fff; border-radius:12px; }
+  .webnote { display:none; text-align:center; font-size:12px; color:var(--web-muted); padding:8px 16px 0; }
+  main.web .webnote { display:block; }
   @media (max-width: 800px) { body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; } section { display:none; } aside { max-height:30vh; } }
+  body > * { min-width:0; }
 </style>
 </head>
 <body>
@@ -35,9 +80,15 @@
   <header>Messages <span class="muted" id="phone"></span></header>
   <div id="contacts"></div>
 </aside>
-<main>
-  <header id="title">Rosie (matchmaker)</header>
+<main id="main">
+  <div class="chrome">
+    <button id="back" type="button">‹ Messages</button>
+    <div class="url"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 7V5a4 4 0 1 1 8 0v2h.5A1.5 1.5 0 0 1 14 8.5v5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 13.5v-5A1.5 1.5 0 0 1 3.5 7H4Zm2 0h4V5a2 2 0 1 0-4 0v2Z"/></svg><span id="url"></span></div>
+  </div>
+  <header><span class="avatar" id="avatar"></span><span><span id="title">Rosie (matchmaker)</span><span class="sub">Private chat · only you two can see this</span></span></header>
+  <div class="webnote">You left Messages. This conversation happens on the web, not over iMessage.</div>
   <div id="thread"></div>
+  <div id="typing" class="typing" hidden>Typing…</div>
   <form id="compose"><input id="text" placeholder="iMessage" autocomplete="off" /><button>Send</button></form>
 </main>
 <section>
@@ -45,32 +96,60 @@
   <div class="tools">
     <button data-hours="30">Skip 30 hours</button>
     <button data-hours="80">Skip 80 hours</button>
+    <button id="invite" title="Have the open companion send the private-chat link now">Invite to web chat</button>
     <button id="reset">Start over</button>
-    <a href="/admin" target="_blank"><button type="button">Admin view</button></a>
+    <a id="admin-link" href="/admin" target="_blank"><button type="button">Admin view</button></a>
+  </div>
+  <div class="legend">
+    <div><span id="lg-imsg"></span>Sent over iMessage (would arrive in the phone's Messages app)</div>
+    <div><span id="lg-web"></span>Sent in the private web chat (opens from a link)</div>
+    <div>Ask a companion to go "somewhere more private" to trigger the link, or use Invite to web chat.</div>
   </div>
   <pre id="state">No state yet. Text Rosie to begin.</pre>
 </section>
 <script>
-const phone = "+15555550100";
-document.getElementById("phone").textContent = phone;
-let contacts = [], active = "matchmaker";
-const threads = {}, unread = {};
+// Hosted (Vercel) mode keeps this browser's user in localStorage and runs
+// each turn as one streamed request. Local mode keeps state on the server.
+let hosted = false, demoUser = null, queue = Promise.resolve();
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
+};
+const fakePhone = () => "+1555" + String(Math.floor(Math.random() * 1e7)).padStart(7, "0");
+let phone = "+15555550100";
+let contacts = [], active = "matchmaker", view = "imessage";
+const threads = {}, unread = {}, webOpen = {};
+
+const ICON = {
+  imessage: '<svg viewBox="0 0 16 16"><path fill="#34c759" d="M8 1.5c-3.87 0-7 2.6-7 5.8 0 1.83 1.03 3.46 2.64 4.53-.1.9-.5 1.83-1.19 2.53 1.42-.07 2.6-.6 3.39-1.27.7.14 1.4.21 2.16.21 3.87 0 7-2.6 7-5.8S11.87 1.5 8 1.5Z"/></svg>',
+  web: '<svg viewBox="0 0 16 16" fill="none" stroke="#c2457a" stroke-width="1.5"><circle cx="8" cy="8" r="6.25"/><path d="M1.75 8h12.5M8 1.75c1.8 1.9 2.6 4 2.6 6.25S9.8 12.35 8 14.25C6.2 12.35 5.4 10.25 5.4 8S6.2 3.65 8 1.75Z"/></svg>',
+  lock: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4 7V5a4 4 0 1 1 8 0v2h.5A1.5 1.5 0 0 1 14 8.5v5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 13.5v-5A1.5 1.5 0 0 1 3.5 7H4Zm2 0h4V5a2 2 0 1 0-4 0v2Z"/></svg>',
+};
+document.getElementById("lg-imsg").innerHTML = ICON.imessage;
+document.getElementById("lg-web").innerHTML = ICON.web;
 
 async function refreshState() {
-  const s = await (await fetch(`/api/sim/state?phone=${encodeURIComponent(phone)}`)).json();
-  if (!s) return;
-  const view = {
+  showState(hosted ? demoUser : await (await fetch(`/api/sim/state?phone=${encodeURIComponent(phone)}`)).json());
+}
+
+function showState(s) {
+  if (!s) { document.getElementById("state").textContent = "No state yet. Text Rosie to begin."; renderContacts(); return; }
+  for (const r of Object.values(s.relationships)) if (r.webUnlockedAt) webOpen[r.characterId] = true;
+  const shown = {
     stage: s.stage,
     credits: s.account?.credits,
     profile: s.profile,
     relationships: Object.fromEntries(Object.values(s.relationships).map(r => [r.characterId, {
-      stage: r.stage, yourMessages: r.userMessageCount, introducedAt: r.introducedAt, lastCheckInAt: r.lastCheckInAt,
-      memory: r.memory,
+      stage: r.stage, yourMessages: r.userMessageCount, webChat: r.webUnlockedAt ? `open (now on ${r.activeChannel ?? "imessage"})` : "not yet",
+      introducedAt: r.introducedAt, lastCheckInAt: r.lastCheckInAt, memory: r.memory,
     }])),
     safetyEvents: s.safety?.events,
   };
-  document.getElementById("state").textContent = JSON.stringify(view, null, 2);
+  document.getElementById("state").textContent = JSON.stringify(shown, null, 2);
+  renderContacts();
 }
+
+const nameOf = (id) => (contacts.find(c => c.id === id) || { name: id }).name;
 
 function renderContacts() {
   const el = document.getElementById("contacts");
@@ -80,40 +159,76 @@ function renderContacts() {
     const last = (threads[c.id] || []).at(-1);
     const div = document.createElement("div");
     div.className = "contact" + (c.id === active ? " active" : "");
-    div.innerHTML = `<b></b>${unread[c.id] ? '<span class="unread"></span>' : ""}<small></small>`;
+    div.innerHTML = `<b></b>${webOpen[c.id] ? `<span class="tag web">${ICON.lock.replace("<svg", '<svg width="9" height="9"')}web</span>` : ""}${unread[c.id] ? '<span class="unread"></span>' : ""}<small></small>`;
     div.querySelector("b").textContent = c.name;
-    div.querySelector("small").textContent = last ? last.text : "Say hi";
-    div.onclick = () => { active = c.id; unread[c.id] = false; render(); };
+    div.querySelector("small").textContent = last ? (last.link ? "🔒 " + last.link.title : last.text) : "Say hi";
+    div.onclick = () => { open(c.id, "imessage"); };
     el.appendChild(div);
   }
+  document.getElementById("invite").disabled = active === "matchmaker" || !threads[active];
 }
 
 function renderThread() {
-  const c = contacts.find(c => c.id === active);
-  document.getElementById("title").textContent = c ? c.name : active;
+  const name = nameOf(active);
+  const main = document.getElementById("main");
+  main.classList.toggle("web", view === "web");
+  document.getElementById("title").textContent = view === "web" ? name : name;
+  document.getElementById("avatar").textContent = name[0];
+  document.getElementById("url").textContent = `matchmaker.app/private/${active}`;
+  document.getElementById("text").placeholder = view === "web" ? `Message ${name} privately` : "iMessage";
   const el = document.getElementById("thread");
   el.innerHTML = "";
-  for (const m of threads[active] || []) {
-    const div = document.createElement("div");
-    div.className = "msg " + (m.me ? "me" : "them");
-    // Plain text, with links made clickable (the dev checkout link).
-    for (const part of m.text.split(/(https?:\/\/\S+)/)) {
-      if (/^https?:\/\//.test(part)) { const a = document.createElement("a"); a.href = part; a.target = "_blank"; a.textContent = part; a.style.color = "inherit"; div.appendChild(a); }
-      else div.appendChild(document.createTextNode(part));
+  for (const m of (threads[active] || []).filter(m => (m.channel || "imessage") === view)) {
+    const row = document.createElement("div");
+    row.className = "row " + (m.system ? "system" : m.me ? "me" : "them");
+    if (m.system) { row.textContent = m.text; el.appendChild(row); continue; }
+    if (m.link) {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = "linkcard";
+      card.innerHTML = `<div class="art">${ICON.lock}</div><div class="meta"><b></b><span></span></div>`;
+      card.querySelector("b").textContent = m.link.title;
+      card.querySelector("span").textContent = "matchmaker.app" + m.link.url;
+      card.onclick = () => open(active, "web");
+      row.appendChild(card);
+    } else {
+      const div = document.createElement("div");
+      div.className = "msg";
+      // Plain text, with links made clickable (the dev checkout link).
+      for (const part of m.text.split(/(https?:\/\/\S+)/)) {
+        if (/^https?:\/\//.test(part)) { const a = document.createElement("a"); a.href = part; a.target = "_blank"; a.textContent = part; a.style.color = "inherit"; div.appendChild(a); }
+        else div.appendChild(document.createTextNode(part));
+      }
+      if (m.mediaUrl) { const img = document.createElement("img"); img.src = m.mediaUrl; div.appendChild(img); }
+      row.appendChild(div);
     }
-    if (m.mediaUrl) { const img = document.createElement("img"); img.src = m.mediaUrl; div.appendChild(img); }
-    el.appendChild(div);
+    const badge = document.createElement("span");
+    badge.className = "badge";
+    badge.innerHTML = (view === "web" ? ICON.web + "Web" : ICON.imessage + "iMessage");
+    row.appendChild(badge);
+    el.appendChild(row);
   }
   el.scrollTop = el.scrollHeight;
 }
 
 function render() { renderContacts(); renderThread(); }
 
-function add(id, m) {
-  (threads[id] ||= []).push(m);
-  if (id !== active) unread[id] = true;
+function open(id, channel) {
+  active = id;
+  view = channel;
+  unread[id] = false;
   render();
 }
+
+function add(id, m) {
+  (threads[id] ||= []).push(m);
+  if (id !== active || (m.channel || "imessage") !== view) unread[id] = true;
+  if (m.link) webOpen[id] = true;
+  if (hosted) store.set("demoThreads", JSON.stringify(threads));
+  render();
+}
+
+document.getElementById("back").onclick = () => open(active, "imessage");
 
 document.getElementById("compose").onsubmit = async (e) => {
   e.preventDefault();
@@ -121,31 +236,97 @@ document.getElementById("compose").onsubmit = async (e) => {
   const text = input.value.trim();
   if (!text) return;
   input.value = "";
-  add(active, { me: true, text });
-  await fetch("/api/sim/send", { method: "POST", body: JSON.stringify({ identity: active, phone, text }) });
+  add(active, { me: true, text, channel: view });
+  if (hosted) return turn({ action: "send", identity: active, text, channel: view });
+  await fetch("/api/sim/send", { method: "POST", body: JSON.stringify({ identity: active, phone, text, channel: view }) });
+};
+
+document.getElementById("invite").onclick = async () => {
+  if (hosted) return turn({ action: "invite", identity: active });
+  await fetch("/api/sim/invite", { method: "POST", body: JSON.stringify({ identity: active, phone }) });
 };
 
 document.querySelectorAll("[data-hours]").forEach(b => b.onclick = async () => {
+  if (hosted) return turn({ action: "advance", hours: Number(b.dataset.hours) });
   await fetch("/api/sim/advance", { method: "POST", body: JSON.stringify({ hours: b.dataset.hours }) });
   setTimeout(refreshState, 500);
 });
 
 document.getElementById("reset").onclick = async () => {
-  await fetch("/api/sim/reset", { method: "POST", body: JSON.stringify({ phone }) });
+  if (hosted) {
+    demoUser = null; store.set("demoUser", null); store.set("demoThreads", null);
+    phone = fakePhone(); store.set("demoPhone", phone);
+    document.getElementById("phone").textContent = phone;
+  } else await fetch("/api/sim/reset", { method: "POST", body: JSON.stringify({ phone }) });
   for (const k of Object.keys(threads)) delete threads[k];
-  active = "matchmaker";
+  for (const k of Object.keys(webOpen)) delete webOpen[k];
+  open("matchmaker", "imessage");
   document.getElementById("state").textContent = "No state yet. Text Rosie to begin.";
-  render();
 };
 
-new EventSource("/api/sim/events").onmessage = (e) => {
-  const m = JSON.parse(e.data);
+function receive(m) {
   if (m.to !== phone) return;
-  add(m.from, { me: false, text: m.text, mediaUrl: m.mediaUrl });
-  refreshState();
-};
+  add(m.from, { me: false, text: m.text, mediaUrl: m.mediaUrl, channel: m.channel || "imessage", link: m.link });
+}
+
+// Hosted mode: one turn at a time, so each starts from the latest state.
+function turn(action) {
+  queue = queue.then(async () => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/demo/turn", { method: "POST", body: JSON.stringify({ ...action, phone, user: demoUser }) });
+      if (!res.ok || !res.body) throw new Error(`server said ${res.status}`);
+      const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buf = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += value;
+        let i;
+        while ((i = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, i); buf = buf.slice(i + 1);
+          if (!line.trim()) continue;
+          const e = JSON.parse(line);
+          if (e.type === "message") receive(e.message);
+          else if (e.type === "state") { demoUser = e.user; store.set("demoUser", JSON.stringify(e.user)); showState(e.user); }
+          else if (e.type === "error") note(`Something went wrong: ${e.error}`);
+        }
+      }
+    } catch (err) {
+      note(`Couldn't reach the server (${err.message}). Try again.`);
+    } finally { setBusy(false); }
+  });
+  return queue;
+}
+
+function setBusy(on) { document.getElementById("typing").hidden = !on; }
+function note(text) { add(active, { me: false, system: true, text, channel: view }); }
+
+// Rebuild the chat from saved state after a reload.
+function rebuildThreads(u) {
+  if (!u) return;
+  const push = (id, list) => { for (const m of list || []) (threads[id] ||= []).push({ me: m.from === "user", text: m.text, channel: m.channel || "imessage" }); };
+  push("matchmaker", u.matchmakerHistory);
+  for (const r of Object.values(u.relationships || {})) { push(r.characterId, r.history); if (r.webUnlockedAt) webOpen[r.characterId] = true; }
+}
 
 (async () => {
+  try { hosted = !!(await (await fetch("/api/sim/config")).json()).hosted; } catch {}
+  if (hosted) {
+    phone = store.get("demoPhone") || fakePhone();
+    store.set("demoPhone", phone);
+    try { demoUser = JSON.parse(store.get("demoUser") || "null"); } catch { demoUser = null; }
+    if (demoUser?.phone !== phone) demoUser = null;
+    let saved = null;
+    try { saved = demoUser && JSON.parse(store.get("demoThreads") || "null"); } catch {}
+    if (saved) { Object.assign(threads, saved); for (const [id, list] of Object.entries(saved)) if (list.some(m => m.link)) webOpen[id] = true; }
+    else rebuildThreads(demoUser);
+    document.getElementById("admin-link").hidden = true;
+  } else {
+    try { rebuildThreads(await (await fetch(`/api/sim/state?phone=${encodeURIComponent(phone)}`)).json()); } catch {}
+    new EventSource("/api/sim/events").onmessage = (e) => { receive(JSON.parse(e.data)); refreshState(); };
+  }
+  document.getElementById("phone").textContent = phone;
   contacts = await (await fetch("/api/sim/contacts")).json();
   render();
   refreshState();

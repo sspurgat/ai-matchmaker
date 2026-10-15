@@ -288,3 +288,35 @@ test("a failed model call still gets a reply instead of silence", async () => {
   assert.match(last.text, /Reply failed: boom/);
   assert.equal(s.store.getUser(PHONE)!.stage, "discovery", "the age confirmation still sticks");
 });
+
+test("asking to get more private sends an iMessage invite and a link to the web chat", async () => {
+  const s = setup();
+  await matched(s);
+  s.transport.sent = [];
+  await s.engine.handleInbound("priya", PHONE, "can we go somewhere more private?");
+  const out = s.transport.from("priya");
+  assert.equal(out.length, 2);
+  assert.ok(out.every((m) => m.channel === "imessage"));
+  assert.equal(out[1].link?.url, "/private/priya");
+  const rel = (await s.store.getUser(PHONE))!.relationships.priya;
+  assert.ok(rel.webUnlockedAt);
+  assert.match(s.brain.calls.at(-1)!.nudge!, /private chat/);
+});
+
+test("web chat stays closed until invited, then replies there", async () => {
+  const s = setup();
+  await matched(s);
+  s.transport.sent = [];
+  await s.engine.handleInbound("priya", PHONE, "hello from the web", undefined, "web");
+  assert.equal(s.transport.from("priya").length, 0);
+
+  await s.engine.unlockWeb(PHONE, "priya");
+  s.transport.sent = [];
+  await s.engine.handleInbound("priya", PHONE, "hello from the web", undefined, "web");
+  const out = s.transport.from("priya");
+  assert.ok(out.length > 0 && out.every((m) => m.channel === "web"));
+  const rel = (await s.store.getUser(PHONE))!.relationships.priya;
+  assert.equal(rel.activeChannel, "web");
+  assert.equal(rel.history.at(-1)!.channel, "web");
+  assert.match(s.brain.calls.at(-1)!.system, /private web chat/);
+});

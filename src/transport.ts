@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import crypto from "node:crypto";
-import type { IdentityId } from "./types.ts";
+import type { Channel, IdentityId } from "./types.ts";
 
 export interface OutboundText {
   from: IdentityId;
@@ -8,6 +8,8 @@ export interface OutboundText {
   text: string;
   mediaUrl?: string;
   chatId?: string; // existing Linq chat, if we have one
+  channel?: Channel; // default imessage
+  link?: { url: string; title: string }; // shown as a link card
 }
 
 export interface Transport {
@@ -54,7 +56,11 @@ export class LinqTransport implements Transport {
   }
 
   async send(msg: OutboundText) {
-    const parts: object[] = [{ type: "text", value: msg.text }];
+    // Web-chat messages belong to the web app, not the phone line. There's no
+    // real web chat yet (simulator only), so they're dropped here.
+    if (msg.channel === "web") return msg.chatId;
+    const text = msg.link ? `${msg.text}\n${msg.link.url}` : msg.text;
+    const parts: object[] = [{ type: "text", value: text }];
     if (msg.mediaUrl) parts.push({ type: "media", url: msg.mediaUrl });
     if (msg.chatId) {
       await this.call("POST", `/chats/${msg.chatId}/messages`, { message: { parts } });
