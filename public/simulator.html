@@ -46,6 +46,7 @@
     <button data-hours="30">Skip 30 hours</button>
     <button data-hours="80">Skip 80 hours</button>
     <button id="reset">Start over</button>
+    <a href="/admin" target="_blank"><button type="button">Admin view</button></a>
   </div>
   <pre id="state">No state yet. Text Rosie to begin.</pre>
 </section>
@@ -60,10 +61,13 @@ async function refreshState() {
   if (!s) return;
   const view = {
     stage: s.stage,
+    credits: s.account?.credits,
     profile: s.profile,
     relationships: Object.fromEntries(Object.values(s.relationships).map(r => [r.characterId, {
       stage: r.stage, yourMessages: r.userMessageCount, introducedAt: r.introducedAt, lastCheckInAt: r.lastCheckInAt,
+      memory: r.memory,
     }])),
+    safetyEvents: s.safety?.events,
   };
   document.getElementById("state").textContent = JSON.stringify(view, null, 2);
 }
@@ -92,7 +96,11 @@ function renderThread() {
   for (const m of threads[active] || []) {
     const div = document.createElement("div");
     div.className = "msg " + (m.me ? "me" : "them");
-    div.textContent = m.text;
+    // Plain text, with links made clickable (the dev checkout link).
+    for (const part of m.text.split(/(https?:\/\/\S+)/)) {
+      if (/^https?:\/\//.test(part)) { const a = document.createElement("a"); a.href = part; a.target = "_blank"; a.textContent = part; a.style.color = "inherit"; div.appendChild(a); }
+      else div.appendChild(document.createTextNode(part));
+    }
     if (m.mediaUrl) { const img = document.createElement("img"); img.src = m.mediaUrl; div.appendChild(img); }
     el.appendChild(div);
   }

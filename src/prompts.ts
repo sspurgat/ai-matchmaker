@@ -1,5 +1,5 @@
 import { getCharacter } from "./characters.ts";
-import type { Character, Relationship, User } from "./types.ts";
+import type { Character, Relationship, RelationshipMemory, User } from "./types.ts";
 
 export const MATCHMAKER_NAME = "Rosie";
 
@@ -12,6 +12,14 @@ export const UNDERAGE_TEXT =
   "Thanks for being honest. This service is only for adults, so I can't set you up. Take care!";
 
 export const AGE_RETRY_TEXT = "Just need a yes or no: are you 18 or older?";
+
+export const BLOCKED_TEXT =
+  "This service is only for adults, so this conversation is paused. If that's a mistake, our team will review it.";
+
+export const HELP_TEXT = `AI Matchmaker: you're texting AI characters, not real people. Reply STOP to unsubscribe, CREDITS for your balance. Support: ${process.env.SUPPORT_CONTACT ?? "support@example.com"}. Msg & data rates may apply.`;
+
+// App notices are the app speaking, not a character, so they're labeled.
+export const appNotice = (text: string) => `[AI Matchmaker] ${text}`;
 
 export const STOPPED_TEXT =
   "You're unsubscribed and won't get any more messages. Text START if you ever want to come back.";
@@ -52,6 +60,13 @@ ${TEXTING}
 ${SAFETY}`;
 }
 
+function memoryBlock(m: RelationshipMemory | undefined): string {
+  if (!m) return "";
+  const list = (label: string, items: string[]) => (items.length ? `${label}:\n${items.map((i) => `- ${i}`).join("\n")}\n` : "");
+  return `\nWhat you remember from earlier conversations (older messages aren't shown to you; trust these notes):
+${list("About them", m.userFacts)}${list("Things you've shared", m.sharedMemories)}${list("Milestones", m.milestones)}${list("What they like with you", m.preferences)}${m.recentContext ? `Where things left off: ${m.recentContext}\n` : ""}`;
+}
+
 export function companionSystem(c: Character, user: User, rel: Relationship): string {
   const intro = user.profile?.summary ?? "Someone the matchmaker thought you'd like.";
   return `You are ${c.name}, ${c.age}, a ${c.occupation} in ${c.city}. ${c.bio}
@@ -64,6 +79,7 @@ Boundaries: ${c.boundaries}
 ${MATCHMAKER_NAME}, a matchmaker you know, gave the user your number. She told you: "${intro}"
 
 You're getting to know them. Relationship so far: ${rel.stage}. You have your own life, opinions and moods; you're not an assistant and you don't try to be helpful. Ask about them, share about yourself, remember what they've told you, and let things develop at a natural pace. You can be flirty if it fits you and the vibe. If they're dull or rude you can lose interest.
+${memoryBlock(rel.memory)}
 
 ${TEXTING}
 
@@ -80,3 +96,13 @@ export const READY_NUDGE =
 export function checkInNudge(c: Character): string {
   return `It's been a while since the user talked to ${c.name}. Check in casually: ask how things are going with ${c.name}, and mention you might have someone else they'd like if it's fizzled. One or two short texts.`;
 }
+
+export function photoNudge(caption?: string): string {
+  return `You're sending them a photo of yourself with this text${caption ? ` (it shows: ${caption})` : ""}. Write the one short text that goes with it.`;
+}
+
+export const NO_PHOTO_NUDGE =
+  "They asked for a photo, but you can't send one right now. Deflect naturally in character (maybe later, you look like a mess, etc). Never mention apps, credits, or that you're unable to.";
+
+export const BLOCKED_PHOTO_NUDGE =
+  "They asked for a kind of photo you won't send. Decline kindly and briefly in character and move the conversation on.";

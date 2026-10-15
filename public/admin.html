@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Matchmaker Admin</title>
+<style>
+  :root { --bg:#f2f2f7; --panel:#fff; --line:#d1d1d6; --text:#111; --muted:#6e6e73; --accent:#0a84ff; --warn:#c0392b; --them:#e5e5ea; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#000; --panel:#1c1c1e; --line:#38383a; --text:#f2f2f7; --muted:#8e8e93; --them:#2c2c2e; --warn:#ff6b5b; } }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px -apple-system, system-ui, sans-serif; background:var(--bg); color:var(--text); }
+  header { padding:12px 16px; background:var(--panel); border-bottom:1px solid var(--line); display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:16px; margin:0; flex:1; }
+  .wrap { display:grid; grid-template-columns: minmax(280px, 380px) 1fr; gap:12px; padding:12px; }
+  @media (max-width: 800px) { .wrap { grid-template-columns: 1fr; } }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px; min-width:0; }
+  .user { padding:10px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .user:hover, .user.active { background:var(--them); }
+  .muted { color:var(--muted); }
+  .warn { color:var(--warn); font-weight:600; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:10px; background:var(--them); font-size:12px; margin-right:4px; }
+  h2 { font-size:15px; margin:16px 0 8px; }
+  .thread { max-height:360px; overflow-y:auto; display:flex; flex-direction:column; gap:4px; padding:8px; border:1px solid var(--line); border-radius:8px; }
+  .msg { max-width:80%; padding:6px 10px; border-radius:14px; white-space:pre-wrap; }
+  .msg.user { align-self:flex-end; background:var(--accent); color:#fff; }
+  .msg.them { align-self:flex-start; background:var(--them); }
+  .msg small { display:block; opacity:.7; font-size:11px; }
+  .divider { text-align:center; font-size:12px; color:var(--muted); margin:6px 0; }
+  input, button { font:inherit; padding:6px 10px; border-radius:8px; border:1px solid var(--line); background:var(--panel); color:var(--text); }
+  button { cursor:pointer; }
+  pre { white-space:pre-wrap; font-size:12px; margin:0; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  td { padding:3px 6px; border-bottom:1px solid var(--line); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Matchmaker admin <span class="muted">· every read here is logged</span></h1>
+  <input id="token" type="password" placeholder="Admin token" />
+  <button id="load">Refresh</button>
+</header>
+<div class="wrap">
+  <div class="card">
+    <div id="events" class="muted"></div>
+    <div id="users"><p class="muted">Loading…</p></div>
+  </div>
+  <div class="card" id="detail"><p class="muted">Pick a user to see their conversations.</p></div>
+</div>
+<script>
+const tokenInput = document.getElementById("token");
+try { tokenInput.value = sessionStorage.getItem("adminToken") || ""; } catch {}
+let selected = null;
+
+async function api(path, opts = {}) {
+  try { sessionStorage.setItem("adminToken", tokenInput.value); } catch {}
+  const res = await fetch(`/api/admin/${path}`, { ...opts, headers: { Authorization: `Bearer ${tokenInput.value}`, "Content-Type": "application/json" } });
+  if (!res.ok) throw new Error((await res.json()).error || res.status);
+  return res.json();
+}
+
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) k === "class" ? (e.className = v) : (e[k] = v);
+  for (const k of kids) e.append(k);
+  return e;
+}
+
+async function loadUsers() {
+  const box = document.getElementById("users");
+  try {
+    const { users, events } = await api("users");
+    document.getElementById("events").textContent = Object.entries(events).map(([k, v]) => `${k}: ${v}`).join(" · ") || "No events yet.";
+    box.innerHTML = "";
+    if (!users.length) box.append(el("p", { class: "muted", textContent: "No users yet." }));
+    for (const u of users) {
+      const row = el("div", { class: "user" + (u.phone === selected ? " active" : "") },
+        el("b", { textContent: u.phone }), " ",
+        el("span", { class: u.stage === "blocked" ? "warn" : "pill", textContent: u.stage }),
+        u.safetyEvents ? el("span", { class: "warn", textContent: ` ⚑ ${u.safetyEvents}` }) : "",
+        el("div", { class: "muted", textContent: `${u.credits} credits · ${u.plan} · ${u.relationships.map(r => `${r.characterId} (${r.stage}, ${r.userMessages})`).join(", ") || "no intros"}` }),
+      );
+      row.onclick = () => { selected = u.phone; loadUsers(); loadUser(u.phone); };
+      box.append(row);
+    }
+  } catch (e) {
+    box.innerHTML = "";
+    box.append(el("p", { class: "warn", textContent: `Couldn't load: ${e.message}. Check the admin token.` }));
+  }
+}
+
+function thread(messages, summarizedThrough) {
+  const t = el("div", { class: "thread" });
+  messages.forEach((m, i) => {
+    if (summarizedThrough && i === summarizedThrough) t.append(el("div", { class: "divider", textContent: "— model sees from here; earlier messages live in memory —" }));
+    t.append(el("div", { class: `msg ${m.from}` }, m.text, el("small", { textContent: new Date(m.at).toLocaleString() })));
+  });
+  if (!messages.length) t.append(el("span", { class: "muted", textContent: "No messages." }));
+  setTimeout(() => (t.scrollTop = t.scrollHeight));
+  return t;
+}
+
+async function loadUser(phone) {
+  const d = document.getElementById("detail");
+  const u = await api(`user?phone=${encodeURIComponent(phone)}`);
+  d.innerHTML = "";
+  d.append(el("h2", { textContent: `${u.phone} · ${u.stage}` }));
+  d.append(el("div", { class: "muted", textContent: `Joined ${new Date(u.createdAt).toLocaleString()} · age confirmed ${u.ageConfirmedAt ? new Date(u.ageConfirmedAt).toLocaleString() : "no"}` }));
+
+  const actions = el("div", { style: "margin-top:8px; display:flex; gap:6px; flex-wrap:wrap" });
+  const amount = el("input", { type: "number", value: "10", style: "width:80px" });
+  const grant = el("button", { textContent: "Grant credits" });
+  grant.onclick = async () => { await api("grant", { method: "POST", body: JSON.stringify({ phone, credits: Number(amount.value) }) }); loadUsers(); loadUser(phone); };
+  actions.append(amount, grant);
+  if (u.stage === "blocked") {
+    const unblock = el("button", { textContent: "Unblock after review" });
+    unblock.onclick = async () => { if (confirm("Unblock this user? They stay quiet until they text START.")) { await api("unblock", { method: "POST", body: JSON.stringify({ phone }) }); loadUsers(); loadUser(phone); } };
+    actions.append(unblock);
+  }
+  d.append(actions);
+
+  const safety = u.safety?.events || [];
+  if (safety.length) {
+    d.append(el("h2", { class: "warn", textContent: `Safety events (${safety.length})` }));
+    const tbl = el("table");
+    for (const e of safety.slice().reverse()) tbl.append(el("tr", {}, el("td", { textContent: new Date(e.at).toLocaleString() }), el("td", { textContent: e.kind }), el("td", { textContent: e.identity }), el("td", { textContent: e.excerpt })));
+    d.append(tbl);
+  }
+
+  if (u.profile) { d.append(el("h2", { textContent: "Preference profile" })); d.append(el("pre", { textContent: JSON.stringify(u.profile, null, 2) })); }
+
+  d.append(el("h2", { textContent: "Rosie (matchmaker)" }));
+  d.append(thread(u.matchmakerHistory));
+
+  for (const r of Object.values(u.relationships)) {
+    d.append(el("h2", { textContent: `${r.characterId} · ${r.stage} · ${r.userMessageCount} messages from user` }));
+    if (r.memory) d.append(el("pre", { textContent: "Memory: " + JSON.stringify(r.memory, null, 2) }));
+    d.append(thread(r.history, r.summarizedThrough));
+  }
+
+  const ledger = u.account?.ledger || [];
+  d.append(el("h2", { textContent: `Credits: ${u.account?.credits ?? 0}${u.account?.memberUntil ? ` · member until ${new Date(u.account.memberUntil).toLocaleDateString()}` : ""}` }));
+  const tbl = el("table");
+  for (const e of ledger.slice().reverse()) tbl.append(el("tr", {}, el("td", { textContent: new Date(e.at).toLocaleString() }), el("td", { textContent: (e.delta > 0 ? "+" : "") + e.delta }), el("td", { textContent: e.reason }), el("td", { class: "muted", textContent: e.ref || "" })));
+  d.append(tbl);
+}
+
+document.getElementById("load").onclick = loadUsers;
+loadUsers();
+</script>
+</body>
+</html>
