@@ -8,7 +8,8 @@
     "start": "node --env-file-if-exists=.env --import tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test test/*.test.ts",
-    "linq:subscribe": "node --env-file-if-exists=.env --import tsx src/scripts/subscribe.ts"
+    "linq:subscribe": "node --env-file-if-exists=.env --import tsx src/scripts/subscribe.ts",
+    "build:vercel": "node scripts/build-vercel.mjs"
   },
   "engines": {
     "node": ">=22.9"
@@ -19,6 +20,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.3",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2"
   }

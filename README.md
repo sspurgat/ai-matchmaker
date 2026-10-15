@@ -14,6 +14,12 @@ npm run dev
 
 Open http://localhost:3000. The simulator looks like a Messages app: text Rosie, and introductions show up as new contacts. The right-hand panel shows what the system has inferred (profile, relationship states), and the "Skip hours" buttons fast-forward time so you can see relationships cool off and Rosie check in.
 
+## Share the simulator on Vercel
+
+`npm run build:vercel` builds a password-protected copy of the simulator for Vercel (`vercel.json` runs it for you on deploy). Set two environment variables in the Vercel project: `ANTHROPIC_API_KEY` and `DEMO_PASSWORD`. The browser asks for the password (any username works) so strangers can't spend your Claude key.
+
+The hosted copy has no database. Each browser keeps its own pretend user and chat in local storage and gets its own fake 555 number, so testers don't see each other. Payments, the admin view and the 15-minute background check-ins are off there; "Skip 30 hours" still works.
+
 ## Run it over real texts (Linq)
 
 1. Get a Linq API key and one phone line per identity (matchmaker + each character).

@@ -27,6 +27,9 @@
   .msg { padding:8px 12px; border-radius:18px; white-space:pre-wrap; line-height:1.35; overflow-wrap:anywhere; }
   .row.me .msg { background:var(--me); color:#fff; }
   .row.them .msg { background:var(--them); }
+  .row.system { align-self:center; font-size:12px; color:var(--muted); text-align:center; }
+  .typing { padding:4px 16px; font-size:12px; color:var(--muted); }
+  [hidden] { display:none !important; }
   .msg img { max-width:220px; border-radius:12px; display:block; margin-top:6px; }
   .badge { display:inline-flex; align-items:center; gap:4px; font-size:11px; color:var(--muted); margin:2px 6px 0; }
   .badge svg { width:12px; height:12px; }
@@ -85,6 +88,7 @@
   <header><span class="avatar" id="avatar"></span><span><span id="title">Rosie (matchmaker)</span><span class="sub">Private chat · only you two can see this</span></span></header>
   <div class="webnote">You left Messages. This conversation happens on the web, not over iMessage.</div>
   <div id="thread"></div>
+  <div id="typing" class="typing" hidden>Typing…</div>
   <form id="compose"><input id="text" placeholder="iMessage" autocomplete="off" /><button>Send</button></form>
 </main>
 <section>
@@ -94,7 +98,7 @@
     <button data-hours="80">Skip 80 hours</button>
     <button id="invite" title="Have the open companion send the private-chat link now">Invite to web chat</button>
     <button id="reset">Start over</button>
-    <a href="/admin" target="_blank"><button type="button">Admin view</button></a>
+    <a id="admin-link" href="/admin" target="_blank"><button type="button">Admin view</button></a>
   </div>
   <div class="legend">
     <div><span id="lg-imsg"></span>Sent over iMessage (would arrive in the phone's Messages app)</div>
@@ -104,8 +108,15 @@
   <pre id="state">No state yet. Text Rosie to begin.</pre>
 </section>
 <script>
-const phone = "+15555550100";
-document.getElementById("phone").textContent = phone;
+// Hosted (Vercel) mode keeps this browser's user in localStorage and runs
+// each turn as one streamed request. Local mode keeps state on the server.
+let hosted = false, demoUser = null, queue = Promise.resolve();
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
+};
+const fakePhone = () => "+1555" + String(Math.floor(Math.random() * 1e7)).padStart(7, "0");
+let phone = "+15555550100";
 let contacts = [], active = "matchmaker", view = "imessage";
 const threads = {}, unread = {}, webOpen = {};
 
@@ -118,8 +129,11 @@ document.getElementById("lg-imsg").innerHTML = ICON.imessage;
 document.getElementById("lg-web").innerHTML = ICON.web;
 
 async function refreshState() {
-  const s = await (await fetch(`/api/sim/state?phone=${encodeURIComponent(phone)}`)).json();
-  if (!s) return;
+  showState(hosted ? demoUser : await (await fetch(`/api/sim/state?phone=${encodeURIComponent(phone)}`)).json());
+}
+
+function showState(s) {
+  if (!s) { document.getElementById("state").textContent = "No state yet. Text Rosie to begin."; renderContacts(); return; }
   for (const r of Object.values(s.relationships)) if (r.webUnlockedAt) webOpen[r.characterId] = true;
   const shown = {
     stage: s.stage,
@@ -166,7 +180,8 @@ function renderThread() {
   el.innerHTML = "";
   for (const m of (threads[active] || []).filter(m => (m.channel || "imessage") === view)) {
     const row = document.createElement("div");
-    row.className = "row " + (m.me ? "me" : "them");
+    row.className = "row " + (m.system ? "system" : m.me ? "me" : "them");
+    if (m.system) { row.textContent = m.text; el.appendChild(row); continue; }
     if (m.link) {
       const card = document.createElement("button");
       card.type = "button";
@@ -209,6 +224,7 @@ function add(id, m) {
   (threads[id] ||= []).push(m);
   if (id !== active || (m.channel || "imessage") !== view) unread[id] = true;
   if (m.link) webOpen[id] = true;
+  if (hosted) store.set("demoThreads", JSON.stringify(threads));
   render();
 }
 
@@ -221,34 +237,96 @@ document.getElementById("compose").onsubmit = async (e) => {
   if (!text) return;
   input.value = "";
   add(active, { me: true, text, channel: view });
+  if (hosted) return turn({ action: "send", identity: active, text, channel: view });
   await fetch("/api/sim/send", { method: "POST", body: JSON.stringify({ identity: active, phone, text, channel: view }) });
 };
 
 document.getElementById("invite").onclick = async () => {
+  if (hosted) return turn({ action: "invite", identity: active });
   await fetch("/api/sim/invite", { method: "POST", body: JSON.stringify({ identity: active, phone }) });
 };
 
 document.querySelectorAll("[data-hours]").forEach(b => b.onclick = async () => {
+  if (hosted) return turn({ action: "advance", hours: Number(b.dataset.hours) });
   await fetch("/api/sim/advance", { method: "POST", body: JSON.stringify({ hours: b.dataset.hours }) });
   setTimeout(refreshState, 500);
 });
 
 document.getElementById("reset").onclick = async () => {
-  await fetch("/api/sim/reset", { method: "POST", body: JSON.stringify({ phone }) });
+  if (hosted) {
+    demoUser = null; store.set("demoUser", null); store.set("demoThreads", null);
+    phone = fakePhone(); store.set("demoPhone", phone);
+    document.getElementById("phone").textContent = phone;
+  } else await fetch("/api/sim/reset", { method: "POST", body: JSON.stringify({ phone }) });
   for (const k of Object.keys(threads)) delete threads[k];
   for (const k of Object.keys(webOpen)) delete webOpen[k];
   open("matchmaker", "imessage");
   document.getElementById("state").textContent = "No state yet. Text Rosie to begin.";
 };
 
-new EventSource("/api/sim/events").onmessage = (e) => {
-  const m = JSON.parse(e.data);
+function receive(m) {
   if (m.to !== phone) return;
   add(m.from, { me: false, text: m.text, mediaUrl: m.mediaUrl, channel: m.channel || "imessage", link: m.link });
-  refreshState();
-};
+}
+
+// Hosted mode: one turn at a time, so each starts from the latest state.
+function turn(action) {
+  queue = queue.then(async () => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/demo/turn", { method: "POST", body: JSON.stringify({ ...action, phone, user: demoUser }) });
+      if (!res.ok || !res.body) throw new Error(`server said ${res.status}`);
+      const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buf = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += value;
+        let i;
+        while ((i = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, i); buf = buf.slice(i + 1);
+          if (!line.trim()) continue;
+          const e = JSON.parse(line);
+          if (e.type === "message") receive(e.message);
+          else if (e.type === "state") { demoUser = e.user; store.set("demoUser", JSON.stringify(e.user)); showState(e.user); }
+          else if (e.type === "error") note(`Something went wrong: ${e.error}`);
+        }
+      }
+    } catch (err) {
+      note(`Couldn't reach the server (${err.message}). Try again.`);
+    } finally { setBusy(false); }
+  });
+  return queue;
+}
+
+function setBusy(on) { document.getElementById("typing").hidden = !on; }
+function note(text) { add(active, { me: false, system: true, text, channel: view }); }
+
+// Rebuild the chat from saved state after a reload.
+function rebuildThreads(u) {
+  if (!u) return;
+  const push = (id, list) => { for (const m of list || []) (threads[id] ||= []).push({ me: m.from === "user", text: m.text, channel: m.channel || "imessage" }); };
+  push("matchmaker", u.matchmakerHistory);
+  for (const r of Object.values(u.relationships || {})) { push(r.characterId, r.history); if (r.webUnlockedAt) webOpen[r.characterId] = true; }
+}
 
 (async () => {
+  try { hosted = !!(await (await fetch("/api/sim/config")).json()).hosted; } catch {}
+  if (hosted) {
+    phone = store.get("demoPhone") || fakePhone();
+    store.set("demoPhone", phone);
+    try { demoUser = JSON.parse(store.get("demoUser") || "null"); } catch { demoUser = null; }
+    if (demoUser?.phone !== phone) demoUser = null;
+    let saved = null;
+    try { saved = demoUser && JSON.parse(store.get("demoThreads") || "null"); } catch {}
+    if (saved) { Object.assign(threads, saved); for (const [id, list] of Object.entries(saved)) if (list.some(m => m.link)) webOpen[id] = true; }
+    else rebuildThreads(demoUser);
+    document.getElementById("admin-link").hidden = true;
+  } else {
+    try { rebuildThreads(await (await fetch(`/api/sim/state?phone=${encodeURIComponent(phone)}`)).json()); } catch {}
+    new EventSource("/api/sim/events").onmessage = (e) => { receive(JSON.parse(e.data)); refreshState(); };
+  }
+  document.getElementById("phone").textContent = phone;
   contacts = await (await fetch("/api/sim/contacts")).json();
   render();
   refreshState();
