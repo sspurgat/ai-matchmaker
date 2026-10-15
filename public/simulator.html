@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Matchmaker Simulator</title>
+<style>
+  :root { --bg:#f2f2f7; --panel:#fff; --line:#d1d1d6; --me:#0a84ff; --them:#e5e5ea; --text:#111; --muted:#6e6e73; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#000; --panel:#1c1c1e; --line:#38383a; --them:#2c2c2e; --text:#f2f2f7; --muted:#8e8e93; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px -apple-system, system-ui, sans-serif; background:var(--bg); color:var(--text); height:100vh; display:grid; grid-template-columns: 240px 1fr 300px; }
+  aside, main, section { background:var(--panel); border-right:1px solid var(--line); display:flex; flex-direction:column; min-height:0; }
+  header { padding:12px 14px; border-bottom:1px solid var(--line); font-weight:600; }
+  .contact { padding:12px 14px; border-bottom:1px solid var(--line); cursor:pointer; }
+  .contact.active { background:var(--them); }
+  .contact small { display:block; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .unread { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--me); margin-left:6px; }
+  #thread { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:6px; }
+  .msg { max-width:70%; padding:8px 12px; border-radius:18px; white-space:pre-wrap; line-height:1.35; }
+  .msg.me { align-self:flex-end; background:var(--me); color:#fff; }
+  .msg.them { align-self:flex-start; background:var(--them); }
+  .msg img { max-width:220px; border-radius:12px; display:block; margin-top:6px; }
+  form { display:flex; gap:8px; padding:10px; border-top:1px solid var(--line); }
+  input, button { font:inherit; border-radius:18px; border:1px solid var(--line); padding:8px 12px; background:var(--panel); color:var(--text); }
+  input { flex:1; }
+  button { cursor:pointer; }
+  pre { margin:0; padding:12px; font-size:12px; overflow:auto; flex:1; white-space:pre-wrap; }
+  .tools { display:flex; flex-wrap:wrap; gap:6px; padding:10px; border-bottom:1px solid var(--line); }
+  .muted { color:var(--muted); font-weight:400; font-size:13px; }
+  @media (max-width: 800px) { body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; } section { display:none; } aside { max-height:30vh; } }
+</style>
+</head>
+<body>
+<aside>
+  <header>Messages <span class="muted" id="phone"></span></header>
+  <div id="contacts"></div>
+</aside>
+<main>
+  <header id="title">Rosie (matchmaker)</header>
+  <div id="thread"></div>
+  <form id="compose"><input id="text" placeholder="iMessage" autocomplete="off" /><button>Send</button></form>
+</main>
+<section>
+  <header>Behind the scenes <span class="muted">(user never sees this)</span></header>
+  <div class="tools">
+    <button data-hours="30">Skip 30 hours</button>
+    <button data-hours="80">Skip 80 hours</button>
+    <button id="reset">Start over</button>
+  </div>
+  <pre id="state">No state yet. Text Rosie to begin.</pre>
+</section>
+<script>
+const phone = "+15555550100";
+document.getElementById("phone").textContent = phone;
+let contacts = [], active = "matchmaker";
+const threads = {}, unread = {};
+
+async function refreshState() {
+  const s = await (await fetch(`/api/sim/state?phone=${encodeURIComponent(phone)}`)).json();
+  if (!s) return;
+  const view = {
+    stage: s.stage,
+    profile: s.profile,
+    relationships: Object.fromEntries(Object.values(s.relationships).map(r => [r.characterId, {
+      stage: r.stage, yourMessages: r.userMessageCount, introducedAt: r.introducedAt, lastCheckInAt: r.lastCheckInAt,
+    }])),
+  };
+  document.getElementById("state").textContent = JSON.stringify(view, null, 2);
+}
+
+function renderContacts() {
+  const el = document.getElementById("contacts");
+  el.innerHTML = "";
+  for (const c of contacts) {
+    if (c.id !== "matchmaker" && !threads[c.id]) continue; // only people who've texted you
+    const last = (threads[c.id] || []).at(-1);
+    const div = document.createElement("div");
+    div.className = "contact" + (c.id === active ? " active" : "");
+    div.innerHTML = `<b></b>${unread[c.id] ? '<span class="unread"></span>' : ""}<small></small>`;
+    div.querySelector("b").textContent = c.name;
+    div.querySelector("small").textContent = last ? last.text : "Say hi";
+    div.onclick = () => { active = c.id; unread[c.id] = false; render(); };
+    el.appendChild(div);
+  }
+}
+
+function renderThread() {
+  const c = contacts.find(c => c.id === active);
+  document.getElementById("title").textContent = c ? c.name : active;
+  const el = document.getElementById("thread");
+  el.innerHTML = "";
+  for (const m of threads[active] || []) {
+    const div = document.createElement("div");
+    div.className = "msg " + (m.me ? "me" : "them");
+    div.textContent = m.text;
+    if (m.mediaUrl) { const img = document.createElement("img"); img.src = m.mediaUrl; div.appendChild(img); }
+    el.appendChild(div);
+  }
+  el.scrollTop = el.scrollHeight;
+}
+
+function render() { renderContacts(); renderThread(); }
+
+function add(id, m) {
+  (threads[id] ||= []).push(m);
+  if (id !== active) unread[id] = true;
+  render();
+}
+
+document.getElementById("compose").onsubmit = async (e) => {
+  e.preventDefault();
+  const input = document.getElementById("text");
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = "";
+  add(active, { me: true, text });
+  await fetch("/api/sim/send", { method: "POST", body: JSON.stringify({ identity: active, phone, text }) });
+};
+
+document.querySelectorAll("[data-hours]").forEach(b => b.onclick = async () => {
+  await fetch("/api/sim/advance", { method: "POST", body: JSON.stringify({ hours: b.dataset.hours }) });
+  setTimeout(refreshState, 500);
+});
+
+document.getElementById("reset").onclick = async () => {
+  await fetch("/api/sim/reset", { method: "POST", body: JSON.stringify({ phone }) });
+  for (const k of Object.keys(threads)) delete threads[k];
+  active = "matchmaker";
+  document.getElementById("state").textContent = "No state yet. Text Rosie to begin.";
+  render();
+};
+
+new EventSource("/api/sim/events").onmessage = (e) => {
+  const m = JSON.parse(e.data);
+  if (m.to !== phone) return;
+  add(m.from, { me: false, text: m.text, mediaUrl: m.mediaUrl });
+  refreshState();
+};
+
+(async () => {
+  contacts = await (await fetch("/api/sim/contacts")).json();
+  render();
+  refreshState();
+})();
+</script>
+</body>
+</html>
