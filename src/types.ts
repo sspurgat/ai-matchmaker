@@ -13,10 +13,15 @@ export type RelationshipStage =
   | "cooling"
   | "dormant";
 
+// Where a message happens: the native Messages app (iMessage), or the
+// private web chat a companion can invite the user into.
+export type Channel = "imessage" | "web";
+
 export interface ChatMessage {
   from: "user" | "them";
   text: string;
   at: string; // ISO timestamp
+  channel?: Channel; // missing = imessage (older records)
 }
 
 export interface PreferenceProfile {
@@ -42,6 +47,8 @@ export interface Relationship {
   summarizedThrough?: number; // index into history
   sentMediaIds?: string[];
   pendingPhoto?: { at: string; cost: number; prompt: string }; // waiting for the user to confirm spending credits
+  webUnlockedAt?: string; // when the companion invited the user to the private web chat
+  activeChannel?: Channel; // where the user last wrote; replies go there
 }
 
 // What a companion remembers once old messages are summarized away.
