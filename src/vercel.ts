@@ -12,11 +12,17 @@ import { ClaudeBrain } from "./llm.ts";
 const brain = new ClaudeBrain();
 const page = (name: string) => fs.readFileSync(new URL(`./${name}`, import.meta.url));
 
-function authorized(req: http.IncomingMessage, password: string): boolean {
+// Forgiving on purpose: values pasted into Vercel or typed on a phone often
+// pick up stray spaces, quotes or a capital first letter.
+export function normalize(pw: string): string {
+  return pw.trim().replace(/^(["'])(.*)\1$/, "$2").trim().toLowerCase();
+}
+
+export function authorized(req: http.IncomingMessage, password: string): boolean {
   const header = String(req.headers.authorization ?? "");
   const decoded = header.startsWith("Basic ") ? Buffer.from(header.slice(6), "base64").toString() : "";
-  const got = crypto.createHash("sha256").update(decoded.slice(decoded.indexOf(":") + 1)).digest();
-  const want = crypto.createHash("sha256").update(password).digest();
+  const got = crypto.createHash("sha256").update(normalize(decoded.slice(decoded.indexOf(":") + 1))).digest();
+  const want = crypto.createHash("sha256").update(normalize(password)).digest();
   return crypto.timingSafeEqual(got, want);
 }
 
