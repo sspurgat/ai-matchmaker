@@ -34,7 +34,7 @@ import {
 } from "./safety.ts";
 import { newUser, type Store } from "./store.ts";
 import type { Transport } from "./transport.ts";
-import { MATCHMAKER, type Channel, type ChatMessage, type IdentityId, type Relationship, type User } from "./types.ts";
+import { MATCHMAKER, type Channel, type Character, type ChatMessage, type IdentityId, type Relationship, type User } from "./types.ts";
 
 export interface EngineConfig {
   introsPerRound: number; // how many people the matchmaker introduces at once
@@ -68,6 +68,9 @@ export interface EngineDeps {
   analytics?: Analytics;
   images?: ImageGenerator;
   payments?: PaymentProvider;
+  // Who the matchmaker may introduce. Over Linq, only characters that have
+  // their own phone line; defaults to everyone.
+  characters?: Character[];
 }
 
 const sleep = (ms: number) => (ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve());
@@ -87,6 +90,7 @@ export class Engine {
   readonly analytics: Analytics;
   private images: ImageGenerator;
   private payments?: PaymentProvider;
+  private characters: Character[];
 
   constructor(
     private store: Store,
@@ -99,6 +103,7 @@ export class Engine {
     this.analytics = deps.analytics ?? new MemoryAnalytics();
     this.images = deps.images ?? new NoImageGenerator();
     this.payments = deps.payments;
+    this.characters = deps.characters ?? CHARACTERS;
   }
 
   // Resolves once scheduled work (intros, memory summaries) has finished. Used by tests.
@@ -247,7 +252,7 @@ export class Engine {
   }
 
   private remaining(user: User) {
-    return CHARACTERS.filter((c) => !user.relationships[c.id]).length;
+    return this.characters.filter((c) => !user.relationships[c.id]).length;
   }
 
   private async onCompanionText(user: User, characterId: string, text: string, crisis: boolean, channel: Channel = "imessage") {
@@ -461,7 +466,7 @@ export class Engine {
       const done = await this.withUser(phone, async () => {
         const user = this.store.getUser(phone);
         if (!user?.profile || user.stage !== "matched") return true;
-        const [pick] = rankCharacters(user, user.profile, CHARACTERS);
+        const [pick] = rankCharacters(user, user.profile, this.characters);
         if (!pick) return true;
         const rel: Relationship = {
           characterId: pick.id,

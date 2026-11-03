@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { MemoryAnalytics } from "../src/analytics.ts";
+import { CHARACTERS } from "../src/characters.ts";
 import { DevPaymentProvider } from "../src/billing.ts";
 import { DEFAULT_CONFIG, Engine, type EngineConfig, type EngineDeps } from "../src/engine.ts";
 import type { Brain, SummarizeInput } from "../src/llm.ts";
@@ -319,4 +320,17 @@ test("web chat stays closed until invited, then replies there", async () => {
   assert.equal(rel.activeChannel, "web");
   assert.equal(rel.history.at(-1)!.channel, "web");
   assert.match(s.brain.calls.at(-1)!.system, /private web chat/);
+});
+
+test("only characters passed in (e.g. those with a Linq line) get introduced", async () => {
+  const s = setup({ introsPerRound: 5 }, { characters: CHARACTERS.filter((c) => ["maya", "jess"].includes(c.id)) });
+  await matched(s);
+  const user = s.store.getUser(PHONE)!;
+  assert.deepEqual(Object.keys(user.relationships).sort(), ["jess", "maya"]);
+  s.transport.sent = [];
+  // Both used up: asking for someone new doesn't promise a third.
+  await s.engine.handleInbound("matchmaker", PHONE, "can you introduce me to someone new?");
+  await s.engine.idle();
+  assert.equal(Object.keys(s.store.getUser(PHONE)!.relationships).length, 2);
+  assert.ok(s.transport.sent.every((m) => m.from === "matchmaker"));
 });

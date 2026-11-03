@@ -42,7 +42,15 @@ const payments: PaymentProvider | undefined = devPayments;
 // Images: placeholder cards in the simulator; none over Linq until a generator is chosen.
 const images = MODE === "sim" ? new PlaceholderImageGenerator() : new NoImageGenerator();
 
-const engine = new Engine(store, brain, transport, config, { analytics, payments, images });
+// Over Linq a character can only text from her own line, so only those with
+// one in LINQ_LINES get introduced.
+const characters = MODE === "linq" ? CHARACTERS.filter((c) => lines[c.id]) : CHARACTERS;
+if (MODE === "linq") {
+  if (!lines[MATCHMAKER]) console.warn(`LINQ_LINES has no "${MATCHMAKER}" line, so the matchmaker can't text.`);
+  console.log(`Linq lines for: ${characters.map((c) => c.name).join(", ") || "no characters"}`);
+}
+
+const engine = new Engine(store, brain, transport, config, { analytics, payments, images, characters });
 
 // Admin view. Over Linq it needs ADMIN_TOKEN; in the simulator it's open
 // unless ADMIN_TOKEN is set.

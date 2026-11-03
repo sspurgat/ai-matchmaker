@@ -22,7 +22,7 @@ The hosted copy has no database. Each browser keeps its own pretend user and cha
 
 ## Run it over real texts (Linq)
 
-1. Get a Linq API key and one phone line per identity (matchmaker + each character).
+1. Get a Linq API key and phone lines: one for the matchmaker, plus one for each character you want her to introduce. Characters without a line are skipped, so three lines (matchmaker, Maya, Jess) is a working setup.
 2. Fill `LINQ_API_KEY` and `LINQ_LINES` in `.env`.
 3. Deploy somewhere public (or use a tunnel), then run `PUBLIC_URL=https://... npm run linq:subscribe` and save the returned `signing_secret` as `LINQ_WEBHOOK_SECRET`.
 4. `npm start`, then text the matchmaker's number.
